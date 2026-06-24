@@ -162,9 +162,9 @@ c4.metric(
     delta_color="inverse",
 )
 c1b, c2b, c3b, c4b = st.columns(4)
-c1b.metric("Restructure rate", f"{100 * s_eu['restructure_rate']:.1f}%",
+c1b.metric("Restructure rate", f"{100 * s_eu.get('restructure_rate', 0.0):.1f}%",
            help="Share of paths where a distressed borrower restructures rather than defaults.")
-c2b.metric("Voluntary prepayment rate", f"{100 * s_eu['prepay_rate']:.1f}%",
+c2b.metric("Voluntary prepayment rate", f"{100 * s_eu.get('prepay_rate', 0.0):.1f}%",
            help="Share of paths where a healthy borrower prepays early after IO.")
 c3b.metric("Avg warrant coverage", f"{100 * sum(r[2]*r[8] for r in E.build_eu_book()) / sum(r[2] for r in E.build_eu_book()):.1f}%",
            help="Drawn-weighted average per-deal warrant coverage across the 25-name EU book.")
@@ -242,8 +242,8 @@ with tab2:
     wal = s_eu["wal"]
     bu_cash   = s_eu["leg_cash_pct"] / wal
     bu_kick   = s_eu["leg_kicker_pct"] / wal
-    bu_restr  = s_eu["leg_restr_pct"] / wal
-    bu_prepay = s_eu["leg_prepay_pct"] / wal
+    bu_restr  = s_eu.get('leg_restr_pct', 0.0) / wal
+    bu_prepay = s_eu.get('leg_prepay_pct', 0.0) / wal
     bu_fees   = (t_up + t_be * (1 - s_eu["default_rate"])) / wal
     bu_loss   = s_eu["el_pct"] / wal
     bu_gross  = bu_cash + bu_fees + bu_kick + bu_restr + bu_prepay - bu_loss
