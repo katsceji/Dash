@@ -62,8 +62,29 @@ with st.sidebar:
     lev = st.slider("Leverage / admin uplift (+pp)", 0.0, 4.0, 2.0, 0.5) / 100
     costs = st.slider("Fund costs (-pp)", 0.0, 8.0, 4.0, 0.5) / 100
 
-tyc_terms = dict(upfront=t_up, backend=t_be, warrant=t_wr, recovery_lag_q=4, warrant_dispersion=0.6)
-comp_terms = dict(upfront=c_up, backend=c_be, warrant=c_wr, recovery_lag_q=4, warrant_dispersion=0.6)
+    st.header("Restructuring (Tycheos active creditor)")
+    p_restr = st.slider("P(restructure | distress) %", 0, 60, 35, 5) / 100
+    restr_haircut = st.slider("PIK coupon during restructure %", 20, 80, 50, 5) / 100
+    restr_ext = st.slider("Maturity extension (quarters)", 2, 12, 6, 2)
+    restr_cure = st.slider("P(cure after restructure) %", 20, 70, 45, 5) / 100
+
+    st.header("Early termination")
+    p_prepay_q = st.slider("P(voluntary prepayment per quarter) %", 0, 15, 5, 1) / 100
+    prepay_prem = st.slider("Prepayment premium %", 0.0, 5.0, 2.0, 0.5) / 100
+
+tyc_terms = dict(
+    upfront=t_up, backend=t_be, warrant=t_wr,
+    recovery_lag_q=4, warrant_dispersion=0.6,
+    p_restructure=p_restr, restr_coupon_haircut=restr_haircut,
+    restr_extension_q=restr_ext, restr_cure_prob=restr_cure,
+    restr_recovery_haircut=0.15,
+    p_prepay_q=p_prepay_q, prepay_premium=prepay_prem,
+)
+comp_terms = dict(
+    upfront=c_up, backend=c_be, warrant=c_wr,
+    recovery_lag_q=4, warrant_dispersion=0.6,
+    p_restructure=0.0, p_prepay_q=0.0,   # US benchmark: no active creditor tools
+)
 
 
 @st.cache_data(show_spinner=False)
@@ -140,6 +161,14 @@ c4.metric(
     delta=f"{100 * (s_eu['el_pct'] - s_us['el_pct']):+.1f}pp vs benchmark",
     delta_color="inverse",
 )
+c1b, c2b, c3b, c4b = st.columns(4)
+c1b.metric("Restructure rate", f"{100 * s_eu['restructure_rate']:.1f}%",
+           help="Share of paths where a distressed borrower restructures rather than defaults.")
+c2b.metric("Voluntary prepayment rate", f"{100 * s_eu['prepay_rate']:.1f}%",
+           help="Share of paths where a healthy borrower prepays early after IO.")
+c3b.metric("Avg warrant coverage", f"{100 * sum(r[2]*r[8] for r in E.build_eu_book()) / sum(r[2] for r in E.build_eu_book()):.1f}%",
+           help="Drawn-weighted average per-deal warrant coverage across the 25-name EU book.")
+c4b.metric("US benchmark default rate", f"{100 * s_us['default_rate']:.1f}%")
 
 tab1, tab2, tab3 = st.tabs(["1 - Strategy comparison", "2 - Return bridge", "3 - Attribution"])
 
@@ -211,12 +240,14 @@ with tab2:
         "Where they diverge is the honest finding."
     )
     wal = s_eu["wal"]
-    bu_cash = s_eu["leg_cash_pct"] / wal
-    bu_kick = s_eu["leg_kicker_pct"] / wal
-    bu_fees = (t_up + t_be * (1 - s_eu["default_rate"])) / wal
-    bu_loss = s_eu["el_pct"] / wal
-    bu_gross = bu_cash + bu_fees + bu_kick - bu_loss
-    bu_net = bu_gross + lev - costs
+    bu_cash   = s_eu["leg_cash_pct"] / wal
+    bu_kick   = s_eu["leg_kicker_pct"] / wal
+    bu_restr  = s_eu["leg_restr_pct"] / wal
+    bu_prepay = s_eu["leg_prepay_pct"] / wal
+    bu_fees   = (t_up + t_be * (1 - s_eu["default_rate"])) / wal
+    bu_loss   = s_eu["el_pct"] / wal
+    bu_gross  = bu_cash + bu_fees + bu_kick + bu_restr + bu_prepay - bu_loss
+    bu_net    = bu_gross + lev - costs
 
     g1, g2 = st.columns(2)
     with g1:
@@ -239,12 +270,12 @@ with tab2:
     with g2:
         wf_bu = go.Figure(go.Waterfall(
             orientation="v",
-            measure=["relative", "relative", "relative", "relative", "total",
-                     "relative", "relative", "total"],
-            x=["Cash interest", "Fees", "Equity kicker", "- Credit losses",
-               "Gross IRR", "+ Leverage", "- Costs", "Net IRR"],
-            y=[bu_cash * 100, bu_fees * 100, bu_kick * 100, -bu_loss * 100,
-               0, lev * 100, -costs * 100, 0],
+            measure=["relative", "relative", "relative", "relative", "relative",
+                     "relative", "total", "relative", "relative", "total"],
+            x=["Cash interest", "Fees", "Equity kicker", "Restructure income",
+               "Prepay premium", "- Credit losses", "Gross IRR", "+ Leverage", "- Costs", "Net IRR"],
+            y=[bu_cash*100, bu_fees*100, bu_kick*100, bu_restr*100,
+               bu_prepay*100, -bu_loss*100, 0, lev*100, -costs*100, 0],
             connector={"line": {"color": "#cccccc"}},
             increasing={"marker": {"color": TYC}},
             decreasing={"marker": {"color": "#d97b66"}},
